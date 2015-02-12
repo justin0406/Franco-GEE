@@ -50,11 +50,14 @@
 #include "./DS4/RefCode_PDTScan.h"
 struct i2c_client *ds4_i2c_client;
 static int f54_fullrawcap_mode = 0;
-#if defined(CONFIG_MACH_APQ8064_GK_KR) || defined(CONFIG_MACH_APQ8064_GKATT) || defined(CONFIG_MACH_APQ8064_GVDCM) || defined(CONFIG_MACH_APQ8064_J1D) || defined(CONFIG_MACH_APQ8064_J1KD) || defined(CONFIG_MACH_APQ8064_GV_KR) || defined(CONFIG_MACH_APQ8064_GKGLOBAL)
+
+#if defined(CONFIG_MACH_APQ8064_GK_KR) || defined(CONFIG_MACH_APQ8064_GKATT) || defined(CONFIG_MACH_APQ8064_GVDCM) || defined(CONFIG_MACH_APQ8064_J1D) || defined(CONFIG_MACH_APQ8064_J1KD)
 // do nothing
 #else
 #define G_ONLY
 #endif
+
+
 #endif
 
 struct lge_touch_data
@@ -82,9 +85,6 @@ struct lge_touch_data
 	struct ghost_finger_ctrl	gf_ctrl;
 	struct jitter_filter_info	jitter_filter;
 	struct accuracy_filter_info	accuracy_filter;
-#ifdef PRESSURE_DIFF
-	struct pressure_diff_info	pressure_diff;
-#endif
 };
 
 struct touch_device_driver*	touch_device_func;
@@ -132,16 +132,9 @@ int force_continuous_mode = 0;
 int long_press_check_count = 0;
 int long_press_check = 0;
 int finger_subtraction_check_count = 0;
-bool ghost_detection = 0;
+int ghost_detection = 0;
 int ghost_detection_count = 0;
-#if defined(CONFIG_MACH_APQ8064_GK_KR) || defined(CONFIG_MACH_APQ8064_GKATT)|| defined(CONFIG_MACH_APQ8064_GKGLOBAL)
-/* keygaurd state rebase */
-int multi_touch_detection = 0;
-bool first_int_check = false;
-#endif
-#ifdef PRESSURE_DIFF
-#define ABS_DIFF_Z(x) (((x) < 0) ? -(x) : (x))
-#endif
+
 #endif
 
 #define MAX_RETRY_COUNT			3
@@ -168,7 +161,7 @@ int ts_charger_plug = 0;
 int ts_charger_type = 0;
 static void safety_reset(struct lge_touch_data *ts);
 static int touch_ic_init(struct lge_touch_data *ts);
-#ifdef CUST_G_TOUCH_FREQ_HOPPING
+#ifdef G_ONLY
 int cur_hopping_idx = 3;
 extern int cns_en;
 #endif
@@ -191,7 +184,8 @@ static enum hrtimer_restart touch_trigger_timer_handler(struct hrtimer *timer)
 void trigger_baseline_state_machine(int plug_in, int type)
 {
 	u8 buf=0;
-#ifdef CUST_G_TOUCH_FREQ_HOPPING
+
+#ifdef G_ONLY
 	extern u8 hopping;
 #endif
 
@@ -204,7 +198,7 @@ void trigger_baseline_state_machine(int plug_in, int type)
 					touch_i2c_read(touch_test_dev->client, 0x50, 1, &buf);
 					buf = buf & 0xDF;
 					touch_i2c_write_byte(touch_test_dev->client, 0x50, buf);
-#ifdef CUST_G_TOUCH_FREQ_HOPPING
+#ifdef G_ONLY
 					cns_en = 0;
 					if(cur_hopping_idx != 3) cur_hopping_idx = 3;
 					safety_reset(touch_test_dev);
@@ -216,8 +210,7 @@ void trigger_baseline_state_machine(int plug_in, int type)
 					touch_i2c_read(touch_test_dev->client, 0x50, 1, &buf);
 					buf = buf | 0x20;
 					touch_i2c_write_byte(touch_test_dev->client, 0x50, buf);
-
-#ifdef CUST_G_TOUCH_FREQ_HOPPING
+#ifdef G_ONLY
 					touch_i2c_write_byte(touch_test_dev->client, 0xFF, 0x01);
 					touch_i2c_read(touch_test_dev->client, 0x0D, 1, &buf);
 
@@ -226,7 +219,8 @@ void trigger_baseline_state_machine(int plug_in, int type)
 							case 0:
 							case 1:
 								if( cur_hopping_idx != 4 ) {
-									touch_i2c_write_byte(touch_test_dev->client, 0x04, 0x84);
+									//touch_i2c_write_byte(touch_test_dev->client, 0x04, 0x84);
+
 									cur_hopping_idx = 4;
 									hopping = 1;
 									TOUCH_INFO_MSG("cur_hopping_idx [ %s ] = %x\n", __func__, cur_hopping_idx);
@@ -242,11 +236,16 @@ void trigger_baseline_state_machine(int plug_in, int type)
 #endif
 				}
 			}
+			
 			ts_charger_type = type;
 			TOUCH_INFO_MSG(" trigger_baseline_state_machine = %d type = %d \n", plug_in, type);
 			ts_charger_plug = plug_in;
 
+#ifdef G_ONLY
 			if( trigger_baseline==0 && plug_in ==1){
+#else
+			if( trigger_baseline==0 ){
+#endif
 				trigger_baseline = 1;
 
 				hrtimer_start(&hr_touch_trigger_timer, ktime_set(0, MS_TO_NS(1000)), HRTIMER_MODE_REL);
@@ -340,7 +339,7 @@ int pressure_diff_detection(struct lge_touch_data *ts)
 int ghost_detect_solution(struct lge_touch_data *ts)
 {
 	extern u8 pressure_zero;
-#ifdef CUST_G_TOUCH_FREQ_HOPPING
+#ifdef G_ONLY
 	extern u8 hopping;
 #endif
 	int first_int_detection = 0;
@@ -350,29 +349,6 @@ int ghost_detect_solution(struct lge_touch_data *ts)
 		TOUCH_INFO_MSG("call state rebase\n");
 		goto out_need_to_rebase;
 	}
-
-#if defined(CONFIG_MACH_APQ8064_GK_KR) || defined(CONFIG_MACH_APQ8064_GKATT)|| defined(CONFIG_MACH_APQ8064_GKGLOBAL)
-	/* keygaurd state rebase */
-	if((ts->gf_ctrl.stage == 0x0b) && (ts->ts_data.total_num > 1)){
-		for(id=0; id < ts->pdata->caps->max_id; id++){
-				if (ts->ts_data.curr_data[id].status == FINGER_PRESSED
-							&& ts->ts_data.prev_data[id].status == FINGER_RELEASED && first_int_check == false) {
-					first_int_check = true;
-					multi_touch_detection++;
-					TOUCH_INFO_MSG("[keyguard state int check] first_int_check : %d\n", first_int_check);
-					TOUCH_INFO_MSG("[keyguard state finger check] multi_touch_detection : %d\n", multi_touch_detection);
-					break;
-				}
-		}
-
-		if(multi_touch_detection > 1){
-			multi_touch_detection = 0;
-			first_int_check = false;
-			TOUCH_INFO_MSG("keygaurd state rebase\n");
-			goto out_need_to_rebase;
-		}
-	}
-#endif
 
 	if(trigger_baseline==2) 
 		goto out_need_to_rebase;
@@ -405,11 +381,12 @@ int ghost_detect_solution(struct lge_touch_data *ts)
 		TOUCH_INFO_MSG("pressure\n");
 		ghost_detection = true;
 	}
-#ifdef CUST_G_TOUCH_FREQ_HOPPING
-	if(hopping == 1) {
+
+#ifdef G_ONLY
+	/*if(hopping == 1) {
 		TOUCH_INFO_MSG("hopping\n");
 		ghost_detection = true;
-	}
+	}*/
 #endif
 	if (ts_charger_plug) {
 		if( (ts->pdata->role->ta_debouncing_finger_num  <= ts->ts_data.total_num) && ( ta_debouncing_count < ts->pdata->role->ta_debouncing_count)) {
@@ -445,6 +422,7 @@ int ghost_detect_solution(struct lge_touch_data *ts)
 						break;
 					}
 				}
+
 
 #ifdef PRESSURE_DIFF
 				if(ts->ts_data.total_num == 1 && ts->ts_data.curr_data[id].pressure == 30){
@@ -557,11 +535,7 @@ int ghost_detect_solution(struct lge_touch_data *ts)
 	}else if (!ts->ts_data.total_num){
 			long_press_check_count = 0;
 			finger_subtraction_check_count = 0;
-#if defined(CONFIG_MACH_APQ8064_GK_KR) || defined(CONFIG_MACH_APQ8064_GKATT)|| defined(CONFIG_MACH_APQ8064_GKGLOBAL)
-			/* keygaurd state rebase */
-			multi_touch_detection = 0;
-			first_int_check = false;
-#endif
+
 #ifdef PRESSURE_DIFF
 			memset(&ts->pressure_diff, 0, sizeof(ts->pressure_diff));
 			ts->pressure_diff.z30_id = -1;
@@ -570,9 +544,7 @@ int ghost_detect_solution(struct lge_touch_data *ts)
 
 	}
 
-#if defined(CONFIG_MACH_APQ8064_GK_KR) || defined(CONFIG_MACH_APQ8064_GKATT) || defined(CONFIG_MACH_APQ8064_GKGLOBAL)
-	if (ts->ts_data.state != TOUCH_BUTTON_LOCK && ts->ts_data.state != DO_NOT_ANYTHING) {
-#else
+
 	if (ts->ts_data.state != TOUCH_BUTTON_LOCK) {
 #endif
 		if (ts->work_sync_err_cnt > 0
@@ -624,6 +596,7 @@ int ghost_detect_solution(struct lge_touch_data *ts)
 		TOUCH_INFO_MSG("need_to_rebase zero\n");
 		goto out_need_to_rebase;
 	}
+
 #ifdef PRESSURE_DIFF
 	else if(ts->pressure_diff.ghost_diff_detection == true && ts->ts_data.total_num == 1 && ts->ts_data.curr_data[ts->pressure_diff.z_more30_id].status == FINGER_RELEASED) {
 		TOUCH_INFO_MSG("need_to_rebase pressure_diff is detected\n");
@@ -684,7 +657,6 @@ out_need_to_rebase:
 out_need_to_init:	
 	return NEED_TO_INIT;
 }
-#endif
 
 void Send_Touch( unsigned int x, unsigned int y)
 {
@@ -997,7 +969,6 @@ static void release_all_ts_event(struct lge_touch_data *ts)
 
 		if(ts->ts_data.prev_button.state == BUTTON_PRESSED) {
 			input_report_key(ts->input_dev, ts->ts_data.prev_button.key_code, BUTTON_RELEASED);
-
 			if (likely(touch_debug_mask & (DEBUG_BUTTON | DEBUG_BASE_INFO)))
 				TOUCH_INFO_MSG("Touch KEY[%d] is released\n", ts->ts_data.prev_button.key_code);
 		}
@@ -1104,13 +1075,7 @@ static int touch_power_cntl(struct lge_touch_data *ts, int onoff)
  */
 static void safety_reset(struct lge_touch_data *ts)
 {
-#ifdef CUST_G_TOUCH
-        if(ts->fw_info.fw_upgrade.is_downloading) {
-	    if (likely(touch_debug_mask & DEBUG_BASE_INFO))
-		TOUCH_INFO_MSG("%s: under f/w updating.. [%d]", __FUNCTION__, ts->fw_info.fw_upgrade.is_downloading);
-		return;
-        }
-#endif
+
 	if (ts->pdata->role->operation_mode)
 		disable_irq(ts->client->irq);
 	else
@@ -1291,8 +1256,7 @@ err_out_critical:
 int ghost_finger_solution(struct lge_touch_data *ts)
 {
 	u8	id = 0;
-
-	for (id = 0; id < ts->pdata->caps->max_id; id++){
+for (id = 0; id < ts->pdata->caps->max_id; id++){
 		if (ts->ts_data.curr_data[id].status == FINGER_PRESSED) {
 			break;
 		}
@@ -1479,7 +1443,6 @@ int accuracy_filter_func(struct lge_touch_data *ts)
 	int delta_x = 0;
 	int delta_y = 0;
 	u8	id = 0;
-
 	for (id = 0; id < ts->pdata->caps->max_id; id++){
 		if (ts->ts_data.curr_data[id].status == FINGER_PRESSED) {
 			break;
@@ -1618,7 +1581,6 @@ int jitter_filter_func(struct lge_touch_data *ts)
 						adj_mode = 1;
 					}
 				}
-
 				delta_x = (int)ts->ts_data.curr_data[id].x_position - (int)ts->jitter_filter.his_data[id].x;
 				delta_y = (int)ts->ts_data.curr_data[id].y_position - (int)ts->jitter_filter.his_data[id].y;
 
@@ -1678,7 +1640,6 @@ int jitter_filter_func(struct lge_touch_data *ts)
 	return 0;
 }
 EXPORT_SYMBOL(jitter_filter_func);
-
 /* touch_init_func
  *
  * In order to reduce the booting-time,
@@ -1808,8 +1769,7 @@ static int touch_work_pre_proc(struct lge_touch_data *ts)
 	atomic_dec(&ts->next_work);
 	ts->ts_data.total_num = 0;
 	ts->int_pin_state = 0;
-
-	if(unlikely(ts->work_sync_err_cnt >= MAX_RETRY_COUNT)){
+if(unlikely(ts->work_sync_err_cnt >= MAX_RETRY_COUNT)){
 		TOUCH_ERR_MSG("Work Sync Failed: Irq-pin has some unknown problems\n");
 		return -EIO;
 	}
@@ -1927,9 +1887,6 @@ static void touch_work_func_a(struct work_struct *work)
 			container_of(work, struct lge_touch_data, work);
 	u8 report_enable = 0;
 	int ret = 0;
-#if defined(CONFIG_MACH_APQ8064_GK_KR) || defined(CONFIG_MACH_APQ8064_GKATT) || defined(CONFIG_MACH_APQ8064_GKGLOBAL)
-	u8 id;
-#endif
 
 #ifdef CUST_G_TOUCH
 	if (ts->pdata->role->ghost_detection_enable) {
@@ -1988,16 +1945,6 @@ static void touch_work_func_a(struct work_struct *work)
 			if (ts->gf_ctrl.stage == GHOST_STAGE_CLEAR || (ts->gf_ctrl.stage | GHOST_STAGE_1) || ts->gf_ctrl.stage == GHOST_STAGE_4)
 				ts->ts_data.state = TOUCH_BUTTON_LOCK;
 
-#if defined(CONFIG_MACH_APQ8064_GK_KR) || defined(CONFIG_MACH_APQ8064_GKATT) || defined(CONFIG_MACH_APQ8064_GKGLOBAL)
-			for (id = 0; id < ts->pdata->caps->max_id; id++) {
-				if (ts->ts_data.curr_data[id].y_position > 3780) {
-					ts->ts_data.state = DO_NOT_ANYTHING;
-#if 0
-					TOUCH_INFO_MSG("Touch Position is more than 3780\n");
-#endif
-				}
-			}
-#endif
 			/* key button cancel */
 			if(ts->ts_data.prev_button.state == BUTTON_PRESSED && ts->ts_data.state == TOUCH_BUTTON_LOCK) {
 				input_report_key(ts->input_dev, ts->ts_data.prev_button.key_code, BUTTON_CANCLED);
@@ -2414,15 +2361,11 @@ static void touch_fw_upgrade_func(struct work_struct *work_fw_upgrade)
 		TOUCH_INFO_MSG("DO NOT UPDATE 7020 gff, 7020 g2, 3203 g2 FW-upgrade is not executed\n");
 		goto out;
 	} else {
-		if(ts->fw_info.fw_force_rework) {
+		if(ts->fw_info.fw_upgrade.fw_force_rework) {
 			TOUCH_INFO_MSG("FW-upgrade Force Rework.\n");
 		} else {
 			TOUCH_INFO_MSG("ic %s img %s\n",ts->fw_info.ic_fw_version,ts->fw_info.syna_img_fw_version);
-#if defined(CONFIG_MACH_APQ8064_GK_KR) || defined(CONFIG_MACH_APQ8064_GKATT)|| defined(CONFIG_MACH_APQ8064_GKGLOBAL)
-			if( ((int)simple_strtoul(&ts->fw_info.ic_fw_version[1], NULL, 10) ==
-#else
 			if( ((int)simple_strtoul(&ts->fw_info.ic_fw_version[1], NULL, 10) >= 
-#endif
 				 (int)simple_strtoul(&ts->fw_info.syna_img_fw_version[1], NULL, 10))
 				 && !ts->fw_info.fw_upgrade.fw_force_upgrade) {		   		
 				TOUCH_INFO_MSG("FW-upgrade is not executed\n");
@@ -2490,8 +2433,6 @@ static void touch_fw_upgrade_func(struct work_struct *work_fw_upgrade)
 		else
 			hrtimer_start(&ts->timer, ktime_set(0, ts->pdata->role->report_period), HRTIMER_MODE_REL);
 
-		msleep(ts->pdata->role->booting_delay);
-
 		touch_ic_init(ts);
 
 		if(saved_state == POWER_WAKE || saved_state == POWER_SLEEP)
@@ -2530,7 +2471,6 @@ out:
 	input_set_abs_params(ts->input_dev, ABS_MT_POSITION_Y, 0, ts->pdata->caps->y_max, 0, 0);
 #endif
 	memset(&ts->fw_info.fw_upgrade, 0, sizeof(ts->fw_info.fw_upgrade));
-	ts->fw_info.fw_force_rework = false;
 	return;
 }
 
@@ -3612,7 +3552,8 @@ static int touch_probe(struct i2c_client *client, const struct i2c_device_id *id
 	ts->client = client;
 #ifdef CUST_G_TOUCH
 	ds4_i2c_client = client;
-	ts->fw_info.fw_force_rework = false;
+
+	ts->fw_info.fw_upgrade.fw_force_rework = false;
 #endif
 	i2c_set_clientdata(client, ts);
 
