@@ -15,7 +15,7 @@ DEFCONFIG="gee_defconfig"
 
 # Kernel Details
 BASE_AK_VER="Franco"
-VER=".r215.gee"
+VER=".r216.gee"
 AK_VER="$BASE_AK_VER$VER"
 
 # AK Variables
