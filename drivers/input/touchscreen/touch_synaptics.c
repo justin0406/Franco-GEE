@@ -206,12 +206,6 @@
 #ifdef CUST_G_TOUCH
 u8 pressure_zero = 0;
 extern int ts_charger_plug;
-extern int ts_charger_type;
-#ifdef G_ONLY
-extern int cur_hopping_idx;
-int cns_en = 0;
-u8 hopping = 0;
-#endif
 #endif
 
 /* wrapper function for i2c communication - except defalut page
@@ -293,7 +287,6 @@ int synaptics_ts_get_data(struct i2c_client *client, struct touch_data* data)
 	u16 im = 0;
 	u16 vm = 0;
 	u16 aim = 0;
-	hopping = 0;
 #endif
 	data->total_num = 0;
 #ifdef CUST_G_TOUCH
@@ -476,18 +469,6 @@ int synaptics_ts_get_data(struct i2c_client *client, struct touch_data* data)
 		if (unlikely(synaptics_ts_page_data_read(client, ANALOG_PAGE, 0x0D, 1, &cns) < 0)) {
 			TOUCH_ERR_MSG("Current Noise State REG read fail\n");
 			goto err_synaptics_getdata;
-		}
-		if(ts_charger_plug && cns >= 1) {
-			cns_en = 1;
-			if(cur_hopping_idx != 4){
-				buf = 0x84;
-				//synaptics_ts_page_data_write(client, 0x01, 0x04, 1, &buf);
-				cur_hopping_idx = 4;
-				hopping = 1;
-				TOUCH_INFO_MSG("cur_hopping_idx [ %s ] = %x %x \n", __func__, buf, hopping);
-			} else {
-				hopping = 0;
-			}
 		}
 
 		if (unlikely(synaptics_ts_page_data_read(client, ANALOG_PAGE, 0x05, 1, &buf) < 0)) {
@@ -847,32 +828,6 @@ int synaptics_ts_init(struct i2c_client* client, struct touch_fw_info* fw_info)
 			TOUCH_ERR_MSG("DEVICE_CONTROL_REG write fail\n");
 			return -EIO;
 		}
-#ifdef G_ONLY
-               if (unlikely(synaptics_ts_page_data_read(client, 0x01, 0x04, 1, &buf) < 0)) {
-                       TOUCH_ERR_MSG("Current Hopping Index read fail\n");
-                       return -EIO;
-               }
-
-               if(buf == 3) cur_hopping_idx = 3;
-               else cur_hopping_idx = 4;
-
-               TOUCH_INFO_MSG("cur_hopping_idx [ %s ] = %x\n", __func__, buf);
-
-               switch(ts_charger_type) {
-                       case 0:
-                       case 1:
-                               if(cns_en && cur_hopping_idx != 4){
-                                       buf = 0x84;
-                                       //synaptics_ts_page_data_write(client, 0x01,
-                                       cur_hopping_idx = 4;
-                                       TOUCH_INFO_MSG("cur_hopping_idx [ %s ] = %x\n", __func__, buf);
-                               }
-                               break;
-                       default:
-                               break;
-               }
-#endif
-
 	}
 
 	if (unlikely(touch_i2c_read(client, DEVICE_CONTROL_REG,	1, &buf) < 0)) {

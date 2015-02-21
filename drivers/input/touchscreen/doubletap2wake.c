@@ -26,6 +26,7 @@
 #include <linux/init.h>
 #include <linux/err.h>
 #include <linux/input/doubletap2wake.h>
+#include <linux/input/pmic8xxx-pwrkey.h>
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 #include <linux/input.h>
@@ -60,7 +61,7 @@ MODULE_LICENSE("GPLv2");
 #define DT2W_DEBUG		0
 #define DT2W_DEFAULT		0
 
-#define DT2W_PWRKEY_DUR		60
+#define DT2W_PWRKEY_DUR		0
 #define DT2W_FEATHER		200
 #define DT2W_TIME		700
 
@@ -73,10 +74,16 @@ static bool scr_suspended = false, exec_count = true;
 #ifndef CONFIG_HAS_EARLYSUSPEND
 static struct notifier_block dt2w_lcd_notif;
 #endif
-static struct input_dev * doubletap2wake_pwrdev;
+struct input_dev * doubletap2wake_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
 static struct workqueue_struct *dt2w_input_wq;
 static struct work_struct dt2w_input_work;
+
+/* PowerKey setter */
+void power_on_display_dt2w(struct input_dev *input_device)
+{
+       doubletap2wake_pwrdev = input_device;
+}
 
 /* Read cmdline for dt2w */
 static int __init read_dt2w_cmdline(char *dt2w)
@@ -381,12 +388,6 @@ static int __init doubletap2wake_init(void)
 	doubletap2wake_pwrdev->name = "dt2w_pwrkey";
 	doubletap2wake_pwrdev->phys = "dt2w_pwrkey/input0";
 
-	rc = input_register_device(doubletap2wake_pwrdev);
-	if (rc) {
-		pr_err("%s: input_register_device err=%d\n", __func__, rc);
-		goto err_input_dev;
-	}
-
 	dt2w_input_wq = create_workqueue("dt2wiwq");
 	if (!dt2w_input_wq) {
 		pr_err("%s: Failed to create dt2wiwq workqueue\n", __func__);
@@ -421,8 +422,6 @@ static int __init doubletap2wake_init(void)
 		pr_warn("%s: sysfs_create_file failed for doubletap2wake_version\n", __func__);
 	}
 
-err_input_dev:
-	input_free_device(doubletap2wake_pwrdev);
 err_alloc_dev:
 	pr_info(LOGTAG"%s done\n", __func__);
 
@@ -446,4 +445,3 @@ static void __exit doubletap2wake_exit(void)
 
 module_init(doubletap2wake_init);
 module_exit(doubletap2wake_exit);
-
