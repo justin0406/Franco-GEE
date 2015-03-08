@@ -15,7 +15,7 @@ DEFCONFIG="gee_defconfig"
 
 # Kernel Details
 BASE_AK_VER="Franco"
-VER=".r216.gee"
+VER=".r217.gee"
 AK_VER="$BASE_AK_VER$VER"
 
 # AK Variables
@@ -31,8 +31,8 @@ KERNEL_DIR=`pwd`
 REPACK_DIR="${HOME}/kernel/GEE-AnyKernel"
 PATCH_DIR="${HOME}/kernel/GEE-AnyKernel/patch"
 MODULES_DIR="${HOME}/kernel/GEE-AnyKernel/patch/modules"
-ZIP_MOVE="${HOME}/kernel/Franco/Franco-releases/"
-ZIMAGE_DIR="${HOME}/kernel/Franco/Franco-GEE/arch/arm/boot"
+ZIP_MOVE="${HOME}/kernel/Franco-releases/"
+ZIMAGE_DIR="${HOME}/kernel/GEE/arch/arm/boot"
 
 # Functions
 function clean_all {
