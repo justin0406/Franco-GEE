@@ -15,12 +15,12 @@ DEFCONFIG="gee_defconfig"
 
 # Kernel Details
 BASE_AK_VER="Franco"
-VER=".r217.gee"
+VER=".r217.5.gee"
 AK_VER="$BASE_AK_VER$VER"
 
 # AK Variables
 export LOCALVERSION=~`echo $AK_VER`
-export CROSS_COMPILE=${HOME}/kernel/LinaroMod-arm-eabi-4.9/bin/arm-eabi-
+export CROSS_COMPILE=${HOME}/TOOLCHAIN/LinaroMod-arm-eabi-4.9/bin/arm-eabi-
 export ARCH=arm
 export SUBARCH=arm
 export KBUILD_BUILD_USER=Justin
@@ -51,11 +51,6 @@ function make_kernel {
 		make $DEFCONFIG
 		make $THREAD
 		cp -vr $ZIMAGE_DIR/$KERNEL $REPACK_DIR
-}
-
-function make_modules {
-		rm `echo $MODULES_DIR"/*"`
-		find $KERNEL_DIR -name '*.ko' -exec cp -v {} $MODULES_DIR \;
 }
 
 
@@ -110,7 +105,6 @@ do
 case "$dchoice" in
 	y|Y)
 		make_kernel
-		make_modules
 		make_zip
 		break
 		;;
